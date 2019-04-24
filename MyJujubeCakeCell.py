@@ -1,0 +1,518 @@
+import tensorflow as tf
+import numpy as np
+import os
+from tensorflow.keras.layers import Layer
+import tensorflow.keras.backend as K
+from tensorflow.python.ops import array_ops
+from tensorflow.python.keras import activations
+from tensorflow.python.keras import initializers
+from tensorflow.python.keras import regularizers
+from tensorflow.python.keras import constraints
+from tensorflow.python.keras.layers.recurrent import _generate_dropout_mask, _generate_zero_filled_state_for_cell
+
+
+class JujubeCakeCell(Layer):
+    def __init__(self,
+                 sub_units,
+                 sub_lstms,
+
+                 cake_activation='tanh',
+                 cake_recurrent_activation='hard_sigmoid',
+                 sub_activation='tanh',
+                 sub_recurrent_activation='hard_sigmoid',
+
+                 cake_use_bias=True,
+                 sub_use_bias=True,
+
+                 cake_kernel_initializer='glorot_uniform',
+                 cake_recurrent_initializer='orthogonal',
+                 cake_bias_initializer='zeros',
+                 sub_kernel_initializer='glorot_uniform',
+                 sub_recurrent_initializer='orthogonal',
+                 sub_bias_initializer='zeros',
+
+                 cake_unit_forget_bias=True,
+                 sub_unit_forget_bias=True,
+
+                 cake_kernel_regularizer=None,
+                 cake_recurrent_regularizer=None,
+                 cake_bias_regularizer=None,
+                 sub_kernel_regularizer=None,
+                 sub_recurrent_regularizer=None,
+                 sub_bias_regularizer=None,
+
+                 cake_kernel_constraint=None,
+                 cake_recurrent_constraint=None,
+                 cake_bias_constraint=None,
+                 sub_kernel_constraint=None,
+                 sub_recurrent_constraint=None,
+                 sub_bias_constraint=None,
+
+                 cake_dropout=0.,
+                 cake_recurrent_dropout=0.,
+                 sub_dropout=0.,
+                 sub_recurrent_dropout=0.,
+
+                 implementation=1,
+
+                 **kwargs):
+        super(JujubeCakeCell, self).__init__(**kwargs)
+        self.sub_units = sub_units
+        self.sub_lstms = sub_lstms
+        self.units = self.sub_units * self.sub_lstms
+
+        self.cake_activation = activations.get(cake_activation)
+        self.cake_recurrent_activation = activations.get(
+            cake_recurrent_activation)
+        self.sub_activation = activations.get(sub_activation)
+        self.sub_recurrent_activation = activations.get(
+            sub_recurrent_activation)
+        self.cake_use_bias = cake_use_bias
+        self.sub_use_bias = sub_use_bias
+
+        self.cake_kernel_initializer = initializers.get(
+            cake_kernel_initializer)
+        self.cake_recurrent_initializer = initializers.get(
+            cake_recurrent_initializer)
+        self.cake_bias_initializer = initializers.get(cake_bias_initializer)
+        self.sub_kernel_initializer = initializers.get(sub_kernel_initializer)
+        self.sub_recurrent_initializer = initializers.get(
+            sub_recurrent_initializer)
+        self.sub_bias_initializer = initializers.get(sub_bias_initializer)
+
+        self.cake_unit_forget_bias = cake_unit_forget_bias
+        self.sub_unit_forget_bias = sub_unit_forget_bias
+
+        self.cake_kernel_regularizer = regularizers.get(
+            cake_kernel_regularizer)
+        self.cake_recurrent_regularizer = regularizers.get(
+            cake_recurrent_regularizer)
+        self.cake_bias_regularizer = regularizers.get(cake_bias_regularizer)
+        self.sub_kernel_regularizer = regularizers.get(sub_kernel_regularizer)
+        self.sub_recurrent_regularizer = regularizers.get(
+            sub_recurrent_regularizer)
+        self.sub_bias_regularizer = regularizers.get(sub_bias_regularizer)
+
+        self.cake_kernel_constraint = constraints.get(cake_kernel_constraint)
+        self.cake_recurrent_constraint = constraints.get(
+            cake_recurrent_constraint)
+        self.cake_bias_constraint = constraints.get(cake_bias_constraint)
+        self.sub_kernel_constraint = constraints.get(sub_kernel_constraint)
+        self.sub_recurrent_constraint = constraints.get(
+            sub_recurrent_constraint)
+        self.sub_bias_constraint = constraints.get(sub_bias_constraint)
+
+        self.cake_dropout = min(1., max(0., cake_dropout))
+        self.cake_recurrent_dropout = min(1., max(0., cake_recurrent_dropout))
+        self.sub_dropout = min(1., max(0., sub_dropout))
+        self.sub_recurrent_dropout = min(1., max(0., sub_recurrent_dropout))
+
+        self.implementation = implementation
+
+        self.state_size = [self.units,
+                           self.units,
+                           self.sub_units,
+                           self.sub_units]
+        self.sub_state_size = [self.sub_units, self.sub_units]
+
+        self._dropout_mask = None
+        self._recurrent_dropout_mask = None
+        self._sub_dropout_mask = None
+        self._sub_recurrent_dropout_mask = None
+
+    def build(self, input_shape):
+        input_dim = input_shape[-1]
+        # print('input_dim:', input_dim)
+        sub_input_dim = int(int(input_dim) / int(self.sub_lstms))
+        # print('sub_input_dim:', sub_input_dim)
+        self.cake_kernel = self.add_weight(
+            shape=(input_dim, self.units * 3),
+            name='cake_kernel',
+            initializer=self.cake_kernel_initializer,
+            regularizer=self.cake_kernel_regularizer,
+            constraint=self.cake_kernel_constraint)
+        # print('cake_kernel.shape:', self.cake_kernel.shape)
+        self.cake_recurrent_kernel = self.add_weight(
+            shape=(self.units, self.units * 3),
+            name='cake_recurrent_kernel',
+            initializer=self.cake_recurrent_initializer,
+            regularizer=self.cake_recurrent_regularizer,
+            constraint=self.cake_recurrent_constraint)
+        # print('cake_recurrent_kernel.shape', self.cake_recurrent_kernel.shape)
+        self.sub_kernel = self.add_weight(
+            shape=(sub_input_dim, self.sub_units * 4),
+            name='sub_kernel',
+            initializer=self.sub_kernel_initializer,
+            regularizer=self.sub_kernel_regularizer,
+            constraint=self.sub_kernel_constraint)
+        self.sub_recurrent_kernel = self.add_weight(
+            shape=(self.sub_units, self.sub_units * 4),
+            name='sub_recurrent_kernel',
+            initializer=self.sub_recurrent_initializer,
+            regularizer=self.sub_recurrent_regularizer,
+            constraint=self.sub_recurrent_constraint)
+
+        if self.cake_use_bias:
+            if self.cake_unit_forget_bias:
+
+                def cake_bias_initializer(_, *args, **kwargs):
+                    return K.concatenate([
+                        self.cake_bias_initializer(
+                            (self.units,), *args, **kwargs),
+                        initializers.Ones()((self.units,), *args, **kwargs),
+                        self.cake_bias_initializer(
+                            (self.units,), *args, **kwargs),
+                    ])
+            else:
+                cake_bias_initializer = self.cake_bias_initializer
+            self.cake_bias = self.add_weight(
+                shape=(self.units * 3,),
+                name='cake_bias',
+                initializer=cake_bias_initializer,
+                regularizer=self.cake_bias_regularizer,
+                constraint=self.cake_bias_constraint)
+        else:
+            self.cake_bias = None
+
+        if self.sub_use_bias:
+            if self.sub_unit_forget_bias:
+
+                def sub_bias_initializer(_, *args, **kwagrs):
+                    return K.concatenate([
+                        self.sub_bias_initializer(
+                            (self.sub_units,), *args, **kwagrs),
+                        initializers.Ones()((self.sub_units,), *args, **kwagrs),
+                        self.sub_bias_initializer(
+                            (self.sub_units * 2,), *args, **kwagrs),
+                    ])
+            else:
+                sub_bias_initializer = self.sub_bias_initializer
+            self.sub_bias = self.add_weight(
+                shape=(self.sub_units * 4,),
+                name='sub_bias',
+                initializer=sub_bias_initializer,
+                regularizer=self.sub_bias_regularizer,
+                constraint=self.sub_bias_constraint)
+        else:
+            self.sub_bias = None
+        self.built = True
+
+    def call(self, inputs, states, training=None):
+        sub_states = states[2:]
+        states = states[:2]
+        if 0 < self.cake_dropout < 1 and self._dropout_mask is None:
+            self._dropout_mask = _generate_dropout_mask(
+                array_ops.ones_like(inputs),
+                self.cake_dropout,
+                training=training,
+                count=3)
+        if (0 < self.cake_recurrent_dropout < 1 and
+                self._recurrent_dropout_mask is None):
+            self._recurrent_dropout_mask = _generate_dropout_mask(
+                array_ops.ones_like(states[0]),
+                self.cake_recurrent_dropout,
+                training=training,
+                count=3)
+
+        dp_mask = self._dropout_mask
+        rec_dp_mask = self._recurrent_dropout_mask
+
+        # print('dp_mask.shape:', dp_mask[0].shape)
+        # print('rec_dp_mask.shape:', rec_dp_mask[0].shape)
+        h_tm1 = states[0]
+        c_tm1 = states[1]
+
+        sub_h_tm1 = sub_states[0]
+        sub_c_tm1 = sub_states[1]
+        # print('sub_h_tm1.shape:', sub_h_tm1.shape)
+        # print('sub_c_tm1.shape:', sub_c_tm1.shape)
+        # print('input.shape:', inputs.shape)
+        sub_inputs = tf.split(inputs, self.sub_lstms, -1)
+        # print('sub_inputs[0].shape:', sub_inputs[0].shape)
+        c_new = []
+        for item in sub_inputs:
+            sub_h_tm1, [sub_h_tm1, sub_c_tm1] = self._subcall(
+                item, [sub_h_tm1, sub_c_tm1], training)
+            c_new.append(sub_c_tm1)
+        sub_h = sub_h_tm1
+        sub_c = sub_c_tm1
+        c_new = K.concatenate(c_new)
+        # print('c_new.shape:', c_new.shape)
+
+        if self.implementation == 1:
+            if 0 < self.cake_dropout < 1:
+                inputs_i = inputs * dp_mask[0]
+                inputs_f = inputs * dp_mask[1]
+                inputs_o = inputs * dp_mask[2]
+            else:
+                inputs_i = inputs
+                inputs_f = inputs
+                inputs_o = inputs
+            x_i = K.dot(inputs_i, self.cake_kernel[:, :self.units])
+            x_f = K.dot(
+                inputs_f, self.cake_kernel[:, self.units:self.units * 2])
+            x_o = K.dot(
+                inputs_o, self.cake_kernel[:, self.units * 2:self.units * 3])
+            if self.cake_use_bias:
+                x_i = K.bias_add(x_i, self.cake_bias[:self.units])
+                x_f = K.bias_add(
+                    x_f, self.cake_bias[self.units:self.units * 2])
+                x_o = K.bias_add(x_o, self.cake_bias[self.units * 2:])
+
+            if 0 < self.cake_recurrent_dropout < 1:
+                h_tm1_i = h_tm1 * rec_dp_mask[0]
+                h_tm1_f = h_tm1 * rec_dp_mask[1]
+                h_tm1_o = h_tm1 * rec_dp_mask[2]
+            else:
+                h_tm1_i = h_tm1
+                h_tm1_f = h_tm1
+                h_tm1_o = h_tm1
+            x = (x_i, x_f, x_o)
+            h_tm1 = (h_tm1_i, h_tm1_f, h_tm1_o)
+            c, o = self._cake_compute_carry_and_output(x, h_tm1, c_tm1, c_new)
+        else:
+            if 0 < self.cake_dropout < 1:
+                inputs *= dp_mask[0]
+            z = K.dot(inputs, self.cake_kernel)
+            if 0 < self.cake_recurrent_dropout < 1:
+                h_tm1 *= rec_dp_mask[0]
+            z += K.dot(h_tml, self.cake_recurrent_kernel)
+            if self.cake_use_bias:
+                z = K.bias_add(z, self.cake_bias)
+
+            z0 = z[:, :self.units]
+            z1 = z[:, self.units:self.units * 2]
+            z1 = z[:, self.units * 2:]
+
+            z = (z0, z1, z2)
+            c, o = self._cake_compute_carry_and_output_fused(z, c_tm1, new_c)
+        # print('c.shape:', c.shape)
+        # print('o.shape:', o.shape)
+        h = o * self.cake_activation(c)
+        return h, [h, c, sub_h, sub_c]
+
+    def _cake_compute_carry_and_output(self, x, h_tm1, c_tm1, c_new):
+        """Computes carry and output using split kernels for cake cell."""
+        x_i, x_f, x_o = x
+        h_tm1_i, h_tm1_f, h_tm1_o = h_tm1
+        i = self.cake_recurrent_activation(
+            x_i + K.dot(h_tm1_i, self.cake_recurrent_kernel[:, :self.units]))
+        f = self.cake_recurrent_activation(x_f + K.dot(
+            h_tm1_f, self.cake_recurrent_kernel[:, self.units:self.units * 2]))
+        # print('i.shape:', i.shape)
+        # print('c_new.shape:', c_new.shape)
+        # print('f.shape:', f.shape)
+        # print('c_tm1.shape:', c_tm1.shape)
+        c = f * c_tm1 + i * c_new
+        o = self.cake_recurrent_activation(
+            x_o + K.dot(h_tm1_o, self.cake_recurrent_kernel[:, self.units * 2:]))
+        return c, o
+
+    def _cake_computs_carry_and_output_fused(self, x, c_tm1, c_new):
+        """Computes carry and output using fused kernels for cake cell."""
+        z0, z1, z2 = z
+        i = self.cake_recurrent_activation(z0)
+        f = self.cake_recurrent_activation(z1)
+        c = f * c_tm1 + i * new_c
+        o = self.cake_recurrent_activation(z2)
+        return c, o
+
+    def _compute_carry_and_output(self, x, h_tm1, c_tm1):
+        """Computes carry and output using split kernels for sub cell."""
+        x_i, x_f, x_c, x_o = x
+        h_tm1_i, h_tm1_f, h_tm1_c, h_tm1_o = h_tm1
+        i = self.sub_recurrent_activation(
+            x_i + K.dot(h_tm1_i, self.sub_recurrent_kernel[:, :self.sub_units]))
+        f = self.sub_recurrent_activation(x_f + K.dot(
+            h_tm1_f, self.sub_recurrent_kernel[:, self.sub_units:self.sub_units * 2]))
+        c = f * c_tm1 + i * self.sub_activation(x_c + K.dot(
+            h_tm1_c, self.sub_recurrent_kernel[:, self.sub_units * 2:self.sub_units * 3]))
+        o = self.sub_recurrent_activation(
+            x_o + K.dot(h_tm1_o, self.sub_recurrent_kernel[:, self.sub_units * 3:]))
+        return c, o
+
+    def _compute_carry_and_output_fused(self, z, c_tm1):
+        """Computes carry and output using fused kernels for sub cell."""
+        z0, z1, z2, z3 = z
+        i = self.sub_recurrent_activation(z0)
+        f = self.sub_recurrent_activation(z1)
+        c = f * c_tm1 + i * self.sub_activation(z2)
+        o = self.sub_recurrent_activation(z3)
+        return c, o
+
+    def _subcall(self, inputs, states, training=None):
+        """
+        In this part, we follow the implemetation of Keras LSTMCell.
+        """
+
+        if 0 < self.sub_dropout < 1 and self._sub_dropout_mask is None:
+            self._sub_dropout_mask = _generate_dropout_mask(
+                array_ops.ones_like(inputs),
+                self.sub_dropout,
+                training=training,
+                count=4)
+        if (0 < self.sub_recurrent_dropout < 1 and
+                self._sub_recurrent_dropout_mask is None):
+            self._sub_recurrent_dropout_mask = _generate_dropout_mask(
+                array_ops.ones_like(states[0]),
+                self.sub_recurrent_dropout,
+                training=training,
+                count=4)
+        dp_mask = self._sub_dropout_mask
+        rec_dp_mask = self._sub_recurrent_dropout_mask
+
+        h_tm1 = states[0]  # previous memory state
+        c_tm1 = states[1]  # previous carry state
+        # print('sub_inputs.shape:', inputs.shape)
+        # print('sub_h_tm1.shape:', h_tm1.shape)
+        # print('sub_c_tm1.shape:', c_tm1.shape)
+        # print('sub_dp_mask.shape:', dp_mask[0].shape)
+        # print('sub_rec_dp_mask.shape:', rec_dp_mask[0].shape)
+        if self.implementation == 1:
+            if 0 < self.sub_dropout < 1.:
+                inputs_i = inputs * dp_mask[0]
+                inputs_f = inputs * dp_mask[1]
+                inputs_c = inputs * dp_mask[2]
+                inputs_o = inputs * dp_mask[3]
+            else:
+                inputs_i = inputs
+                inputs_f = inputs
+                inputs_c = inputs
+                inputs_o = inputs
+            x_i = K.dot(inputs_i, self.sub_kernel[:, :self.sub_units])
+            x_f = K.dot(
+                inputs_f, self.sub_kernel[:, self.sub_units:self.sub_units * 2])
+            x_c = K.dot(
+                inputs_c, self.sub_kernel[:, self.sub_units * 2:self.sub_units * 3])
+            x_o = K.dot(inputs_o, self.sub_kernel[:, self.sub_units * 3:])
+            if self.sub_use_bias:
+                x_i = K.bias_add(x_i, self.sub_bias[:self.sub_units])
+                x_f = K.bias_add(
+                    x_f, self.sub_bias[self.sub_units:self.sub_units * 2])
+                x_c = K.bias_add(
+                    x_c, self.sub_bias[self.sub_units * 2:self.sub_units * 3])
+                x_o = K.bias_add(x_o, self.sub_bias[self.sub_units * 3:])
+
+            if 0 < self.sub_recurrent_dropout < 1.:
+                h_tm1_i = h_tm1 * rec_dp_mask[0]
+                h_tm1_f = h_tm1 * rec_dp_mask[1]
+                h_tm1_c = h_tm1 * rec_dp_mask[2]
+                h_tm1_o = h_tm1 * rec_dp_mask[3]
+            else:
+                h_tm1_i = h_tm1
+                h_tm1_f = h_tm1
+                h_tm1_c = h_tm1
+                h_tm1_o = h_tm1
+            x = (x_i, x_f, x_c, x_o)
+            h_tm1 = (h_tm1_i, h_tm1_f, h_tm1_c, h_tm1_o)
+            c, o = self._compute_carry_and_output(x, h_tm1, c_tm1)
+        else:
+            if 0. < self.sub_dropout < 1.:
+                inputs *= dp_mask[0]
+            z = K.dot(inputs, self.sub_kernel)
+            if 0. < self.sub_recurrent_dropout < 1.:
+                h_tm1 *= rec_dp_mask[0]
+            z += K.dot(h_tm1, self.sub_recurrent_kernel)
+            if self.sub_use_bias:
+                z = K.bias_add(z, self.sub_bias)
+
+            z0 = z[:, :self.sub_units]
+            z1 = z[:, self.sub_units:2 * self.sub_units]
+            z2 = z[:, 2 * self.sub_units:3 * self.sub_units]
+            z3 = z[:, 3 * self.sub_units:]
+
+            z = (z0, z1, z2, z3)
+            c, o = self._compute_carry_and_output_fused(z, c_tm1)
+
+        h = o * self.sub_activation(c)
+        return h, [h, c]
+
+    def get_initial_state(self, inputs=None, batch_size=None, dtype=None):
+        return list(_generate_zero_filled_state_for_cell(self, inputs, batch_size, dtype))
+
+    def get_config(self):
+        config = {
+            'sub_units':
+            self.sub_units,
+            'sub_lsmts':
+            self.sub_lstms,
+            'cake_activation':
+            activations.serialize(self.cake_activation),
+            'cake_recurrent_activation':
+            activations.serialize(self.cake_recurrent_activation),
+            'sub_activation':
+            activations.serialize(self.sub_activation),
+            'sub_recurrent_activation':
+            activations.serialize(self.sub_recurrent_constraint),
+            'cake_use_bias':
+            self.cake_use_bias,
+            'sub_use_bias':
+            self.sub_use_bias,
+            'cake_kernel_initializer':
+            initializers.serialize(self.cake_kernel_initializer),
+            'cake_recurrent_initializer':
+            initializers.serialize(self.cake_recurrent_initializer),
+            'cake_bias_initializer':
+            initializers.serialize(self.cake_bias_initializer),
+            'sub_kernel_initializer':
+            initializers.serialize(self.sub_kernel_initializer),
+            'sub_recurrent_initializer':
+            initializers.serialize(self.sub_recurrent_initializer),
+            'sub_bias_initializer':
+            initializers.serialize(self.sub_bias_initializer),
+            'cake_unit_forget_bias':
+            self.cake_unit_forget_bias,
+            'sub_unit_forget_bias':
+            self.sub_unit_forget_bias,
+            'cake_kernel_regularizer':
+            regularizers.serialize(self.cake_kernel_regularizer),
+            'cake_recurrent_regularizer':
+            regularizers.serialize(self.cake_recurrent_regularizer),
+            'cake_bias_regularizer':
+            regularizers.serialize(self.cake_bias_regularizer),
+            'sub_kernel_regularizer':
+            regularizers.serialize(self.sub_kernel_regularizer),
+            'sub_recurrent_regularizer':
+            regularizers.serialize(self.sub_recurrent_regularizer),
+            'sub_bias_regularizer':
+            regularizers.serialize(self.sub_bias_regularizer),
+            'cake_kernel_constraint':
+            constraints.serialize(self.cake_kernel_constraint),
+            'cake_recurrent_constraint':
+            constraints.serialize(self.cake_recurrent_constraint),
+            'cake_bias_constraint':
+            constraints.serialize(self.cake_bias_constraint),
+            'sub_kernel_constraint':
+            constraints.serialize(self.sub_kernel_constraint),
+            'sub_recurrent_constraint':
+            constraints.serialize(self.sub_recurrent_constraint),
+            'sub_bias_constraint':
+            constraints.serialize(self.sub_bias_constraint),
+            'cake_dropout':
+            self.cake_dropout,
+            'cake_recurrent_dropout':
+            self.cake_recurrent_dropout,
+            'sub_dropout':
+            self.sub_dropout,
+            'sub_recurrent_dropout':
+            self.sub_recurrent_dropout,
+            'implementation':
+            self.implementation
+        }
+        base_config = super(JujubeCakeCell, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+
+if __name__ == '__main__':
+    from tensorflow.keras.layers import *
+    from tensorflow.keras.models import Model
+    cell = JujubeCakeCell(128, 2,
+                          cake_dropout=0.5,
+                          cake_recurrent_dropout=0.5,
+                          sub_dropout=0.5,
+                          sub_recurrent_dropout=0.5)
+    x = Input((100, 128))
+    layer = RNN(cell, return_sequences=True, name='JujubeCake')
+    y = layer(x)
+    model = Model(x, y)
+    model.summary()
