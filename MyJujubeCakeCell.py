@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import os
 from tensorflow.keras.layers import Layer
+from tensorflow.keras.layers import RNN
 import tensorflow.keras.backend as K
 from tensorflow.python.ops import array_ops
 from tensorflow.python.keras import activations
@@ -9,6 +10,7 @@ from tensorflow.python.keras import initializers
 from tensorflow.python.keras import regularizers
 from tensorflow.python.keras import constraints
 from tensorflow.python.keras.layers.recurrent import _generate_dropout_mask, _generate_zero_filled_state_for_cell
+from tensorflow.python.keras.engine.input_spec import InputSpec
 
 
 class JujubeCakeCell(Layer):
@@ -200,6 +202,12 @@ class JujubeCakeCell(Layer):
     def call(self, inputs, states, training=None):
         sub_states = states[2:]
         states = states[:2]
+
+        h_tm1 = states[0]
+        c_tm1 = states[1]
+
+        sub_h_tm1 = sub_states[0]
+        sub_c_tm1 = sub_states[1]
         if 0 < self.cake_dropout < 1 and self._dropout_mask is None:
             self._dropout_mask = _generate_dropout_mask(
                 array_ops.ones_like(inputs),
@@ -219,11 +227,7 @@ class JujubeCakeCell(Layer):
 
         # print('dp_mask.shape:', dp_mask[0].shape)
         # print('rec_dp_mask.shape:', rec_dp_mask[0].shape)
-        h_tm1 = states[0]
-        c_tm1 = states[1]
 
-        sub_h_tm1 = sub_states[0]
-        sub_c_tm1 = sub_states[1]
         # print('sub_h_tm1.shape:', sub_h_tm1.shape)
         # print('sub_c_tm1.shape:', sub_c_tm1.shape)
         # print('input.shape:', inputs.shape)
@@ -342,7 +346,7 @@ class JujubeCakeCell(Layer):
 
     def _subcall(self, inputs, states, training=None):
         """
-        In this part, we follow the implemetation of Keras LSTMCell.
+        In this part, we imitate the implemetation of Keras LSTMCell.
         """
 
         if 0 < self.sub_dropout < 1 and self._sub_dropout_mask is None:
@@ -503,6 +507,125 @@ class JujubeCakeCell(Layer):
         return dict(list(base_config.items()) + list(config.items()))
 
 
+class JujubeCake(RNN):
+    def __init__(self,
+                 sub_units,
+                 sub_lstms,
+
+                 cake_activation='tanh',
+                 cake_recurrent_activation='hard_sigmoid',
+                 sub_activation='tanh',
+                 sub_recurrent_activation='hard_sigmoid',
+
+                 cake_use_bias=True,
+                 sub_use_bias=True,
+
+                 cake_kernel_initializer='glorot_uniform',
+                 cake_recurrent_initializer='orthogonal',
+                 cake_bias_initializer='zeros',
+                 sub_kernel_initializer='glorot_uniform',
+                 sub_recurrent_initializer='orthogonal',
+                 sub_bias_initializer='zeros',
+
+                 cake_unit_forget_bias=True,
+                 sub_unit_forget_bias=True,
+
+                 cake_kernel_regularizer=None,
+                 cake_recurrent_regularizer=None,
+                 cake_bias_regularizer=None,
+                 sub_kernel_regularizer=None,
+                 sub_recurrent_regularizer=None,
+                 sub_bias_regularizer=None,
+
+                 activity_regularizer=None,
+
+                 cake_kernel_constraint=None,
+                 cake_recurrent_constraint=None,
+                 cake_bias_constraint=None,
+                 sub_kernel_constraint=None,
+                 sub_recurrent_constraint=None,
+                 sub_bias_constraint=None,
+
+                 cake_dropout=0.,
+                 cake_recurrent_dropout=0.,
+                 sub_dropout=0.,
+                 sub_recurrent_dropout=0.,
+
+                 implementation=1,
+
+                 return_sequences=False,
+                 return_state=False,
+                 go_backwards=False,
+                 stateful=False,
+                 unroll=False,
+                 **kwargs):
+        cell = JujubeCakeCell(sub_units,
+                              sub_lstms,
+
+                              cake_activation=cake_activation,
+                              cake_recurrent_activation=cake_recurrent_activation,
+                              sub_activation=sub_activation,
+                              sub_recurrent_activation=sub_recurrent_activation,
+
+                              cake_use_bias=cake_use_bias,
+                              sub_use_bias=sub_use_bias,
+
+                              cake_kernel_initializer=cake_kernel_initializer,
+                              cake_recurrent_initializer=cake_recurrent_initializer,
+                              cake_bias_initializer=cake_bias_initializer,
+                              sub_kernel_initializer=sub_kernel_initializer,
+                              sub_recurrent_initializer=sub_recurrent_initializer,
+                              sub_bias_initializer=sub_bias_initializer,
+
+                              cake_unit_forget_bias=cake_unit_forget_bias,
+                              sub_unit_forget_bias=sub_unit_forget_bias,
+
+                              cake_kernel_regularizer=cake_kernel_regularizer,
+                              cake_recurrent_regularizer=cake_recurrent_regularizer,
+                              cake_bias_regularizer=cake_bias_regularizer,
+                              sub_kernel_regularizer=sub_kernel_regularizer,
+                              sub_recurrent_regularizer=sub_recurrent_regularizer,
+                              sub_bias_regularizer=sub_bias_regularizer,
+
+                              cake_kernel_constraint=cake_kernel_constraint,
+                              cake_recurrent_constraint=cake_recurrent_constraint,
+                              cake_bias_constraint=cake_bias_constraint,
+                              sub_kernel_constraint=sub_kernel_constraint,
+                              sub_recurrent_constraint=sub_recurrent_constraint,
+                              sub_bias_constraint=sub_bias_constraint,
+
+                              cake_dropout=cake_dropout,
+                              cake_recurrent_dropout=cake_recurrent_dropout,
+                              sub_dropout=sub_dropout,
+                              sub_recurrent_dropout=sub_recurrent_dropout,
+
+                              implementation=implementation,
+
+                              **kwargs)
+        super(JujubeCake, self).__init__(
+            cell,
+            return_sequences=return_sequences,
+            return_state=return_state,
+            go_backwards=go_backwards,
+            stateful=stateful,
+            unroll=unroll,
+            **kwargs)
+        self.activity_regularizer = regularizers.get(activity_regularizer)
+        self.input_spec = [InputSpec(ndim=3)]
+
+    def call(self, inputs, mask=None, training=None, initial_state=None):
+        self.cell._dropout_mask = None
+        self.cell._recurrent_dropout_mask = None
+        self.cell._sub_dropout_mask = None
+        self.cell._sub_recurrent_dropout_mask = None
+        return super(JujubeCake, self).call(
+            inputs, mask=mask, training=training, initial_state=initial_state)
+
+    # TODO: @property
+
+    # TODO: def get_config(self)
+
+    # TODO: @calssmethod def from_config(cls, config)
 if __name__ == '__main__':
     from tensorflow.keras.layers import *
     from tensorflow.keras.models import Model
@@ -512,7 +635,10 @@ if __name__ == '__main__':
                           sub_dropout=0.5,
                           sub_recurrent_dropout=0.5)
     x = Input((100, 128))
-    layer = RNN(cell, return_sequences=True, name='JujubeCake')
-    y = layer(x)
+    y = JujubeCake(128, 2,
+                   cake_dropout=0.5,
+                   cake_recurrent_dropout=0.5,
+                   sub_dropout=0.5,
+                   sub_recurrent_dropout=0.5)(x)
     model = Model(x, y)
     model.summary()
