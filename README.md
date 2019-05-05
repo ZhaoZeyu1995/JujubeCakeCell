@@ -1,7 +1,5 @@
 # JujubeCakeCell
 
-<script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=default"></script>
-
 ## Introduction
 
 This is a nested LSTM RNN cell, named JujubeCakeCell. It has a structure as shown in this figure
