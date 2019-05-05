@@ -6,12 +6,14 @@ This is a nested LSTM RNN cell, named JujubeCakeCell. It has a structure as show
 
 ![JujubeCakeCell](https://ws4.sinaimg.cn/large/006tNc79ly1g2qhhqnznyj30mc0dntaa.jpg)
 
-In the process of JujubeCakeCell, it has a chain of LSTM cell and it collect the output of some LSTM cell to compose a JujubeCakeCell state vector. As for other aspects, JujubeCakeCell has a similar structure as LSTM cell.
+In the process of JujubeCakeCell, it has a chain of LSTM cells and it collects the state vectors of a given number of LSTM cells to compose its own state vector for itself. As for other aspects, JujubeCakeCell has a similar structure like LSTM cell.
 
-In particular, an LSTM cell can be described by using these functions.
+Here, we present an implemetation based on Tensorflow and Keras. To use JujubeCakeCell as a recurrent layer, we recommend you to use JujubeCake directly. You can run `python test.py` to have a try.
 
-![LSTMEquation1](<http://chart.googleapis.com/chart?cht=tx&chl=\mathbf{f}_t = \sigma(\mathbf{x}_t\mathbf{W}_{xf}+\mathbf{h}_{t-1}\mathbf{W}_{hf}+\mathbf{b}_{f}))
+In `test.py`, there is an example that we use Reuters dataset to make a classifier using JujubeCakeCell.
 
-![LSTMEquation2](<http://chart.googleapis.com/chart?cht=tx&chl=\mathbf{o}_t = \sigma(\mathbf{x}_t\mathbf{W}_{xo}+\mathbf{h}_{t-1}\mathbf{W}_{ho}+\mathbf{b}_o))
+Note: when you use JujubeCake as a layer, you should use `JujubeCake()` to instant an RNN layer and you should always perform Reshape layer before JujubeCake.
 
-![LSTMEquation3](<http://chart.googleapis.com/chart?cht=tx&chl=\mathbf{i}_t = \sigma(\mathbf{x}_t\mathbf{W}_{xi}+\mathbf{h}_{t-1}\mathbf{W}_{hi}+\mathbf{b}_i))
+## Dependencies
+
+Tensorflow 1.13.1

@@ -15,12 +15,6 @@ if __name__ == '__main__':
     (x_train, y_train), (x_test, y_test) = reuters.load_data(num_words=num_words)
     x_train = sequence.pad_sequences(x_train, maxlen=max_len)
     x_test = sequence.pad_sequences(x_test, maxlen=max_len)
-    print(x_train.shape)
-    print(y_train.shape)
-    print(y_train)
-    print(x_test.shape)
-    print(y_test.shape)
-    print(y_test)
 
     inputs = Input((max_len,))
     x = Embedding(num_words, embedding_dim)(inputs)
@@ -31,9 +25,7 @@ if __name__ == '__main__':
     model.summary()
     model.compile(optimizer='rmsprop',
                   loss='sparse_categorical_crossentropy', metrics=['acc'])
-    callback = [callbacks.TensorBoard('./tensorboard/jujube/')]
     model.fit(x_train, y_train,
               epochs=20,
               batch_size=128,
-              validation_split=0.2,
-              callbacks=callback)
+              validation_split=0.2)
