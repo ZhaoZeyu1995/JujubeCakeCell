@@ -1,8 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import os
-from tensorflow.keras.layers import Layer
-from tensorflow.keras.layers import RNN
+from tensorflow.keras.layers import Layer, RNN, Reshape
 import tensorflow.keras.backend as K
 from tensorflow.python.ops import array_ops
 from tensorflow.python.keras import activations
@@ -225,14 +224,7 @@ class JujubeCakeCell(Layer):
         dp_mask = self._dropout_mask
         rec_dp_mask = self._recurrent_dropout_mask
 
-        # print('dp_mask.shape:', dp_mask[0].shape)
-        # print('rec_dp_mask.shape:', rec_dp_mask[0].shape)
-
-        # print('sub_h_tm1.shape:', sub_h_tm1.shape)
-        # print('sub_c_tm1.shape:', sub_c_tm1.shape)
-        # print('input.shape:', inputs.shape)
         sub_inputs = tf.split(inputs, self.sub_lstms, -1)
-        # print('sub_inputs[0].shape:', sub_inputs[0].shape)
         c_new = []
         for item in sub_inputs:
             sub_h_tm1, [sub_h_tm1, sub_c_tm1] = self._subcall(
@@ -241,7 +233,6 @@ class JujubeCakeCell(Layer):
         sub_h = sub_h_tm1
         sub_c = sub_c_tm1
         c_new = K.concatenate(c_new)
-        # print('c_new.shape:', c_new.shape)
 
         if self.implementation == 1:
             if 0 < self.cake_dropout < 1:
@@ -346,7 +337,7 @@ class JujubeCakeCell(Layer):
 
     def _subcall(self, inputs, states, training=None):
         """
-        In this part, we imitate the implemetation of Keras LSTMCell.
+        In this part, we imitate the implementation of Keras LSTMCell.
         """
 
         if 0 < self.sub_dropout < 1 and self._sub_dropout_mask is None:
@@ -621,24 +612,237 @@ class JujubeCake(RNN):
         return super(JujubeCake, self).call(
             inputs, mask=mask, training=training, initial_state=initial_state)
 
-    # TODO: @property
+    @property
+    def sub_units(self):
+        return self.cell.sub_units
 
-    # TODO: def get_config(self)
+    @property
+    def sub_lstms(self):
+        return self.cell.sub_lstms
 
-    # TODO: @calssmethod def from_config(cls, config)
-if __name__ == '__main__':
-    from tensorflow.keras.layers import *
-    from tensorflow.keras.models import Model
-    cell = JujubeCakeCell(128, 2,
-                          cake_dropout=0.5,
-                          cake_recurrent_dropout=0.5,
-                          sub_dropout=0.5,
-                          sub_recurrent_dropout=0.5)
-    x = Input((100, 128))
-    y = JujubeCake(128, 2,
-                   cake_dropout=0.5,
-                   cake_recurrent_dropout=0.5,
-                   sub_dropout=0.5,
-                   sub_recurrent_dropout=0.5)(x)
-    model = Model(x, y)
-    model.summary()
+    @property
+    def sub_activation(self):
+        return self.cell.sub_acitvation
+
+    @property
+    def cake_activation(self):
+        return self.cell.cake_activation
+
+    @property
+    def sub_recurrent_activation(self):
+        return self.cell.sub_recurrent_activation
+
+    @property
+    def cake_recurrent_activation(self):
+        return self.cell.cake_recurrent_activation(self)
+
+    @property
+    def sub_use_bias(self):
+        return self.cell.sub_use_bias
+
+    @property
+    def cake_use_bias(self):
+        return self.cell.cake_use_bias
+
+    @property
+    def sub_kernel_initializer(self):
+        return self.cell.sub_kernel_initializer
+
+    @property
+    def cake_kernel_initializer(self):
+        return self.cell.cake_kernel_initializer
+
+    @property
+    def sub_recurrent_initializer(self):
+        return self.cell.sub_recurrent_initializer
+
+    @property
+    def cake_recurrent_initializer(self):
+        return self.cell.cake_recurrent_initializer
+
+    @property
+    def sub_bias_initializer(self):
+        return self.cell.sub_bias_initializer
+
+    @property
+    def cake_bias_initializer(self):
+        return self.cell.cake_bias_initializer
+
+    @property
+    def sub_unit_forget_bias(self):
+        return self.cell.sub_unit_forget_bias
+
+    @property
+    def cake_unit_forget_bias(self):
+        return self.cell.cake_unit_forget_bias
+
+    @property
+    def sub_kernel_regularizer(self):
+        return self.cell.sub_kernel_regularizer
+
+    @property
+    def cake_kernel_regularizer(self):
+        return self.cell.cake_kernel_regularizer
+
+    @property
+    def sub_recurrent_regularizer(self):
+        return self.cell.sub_recurrent_regularizer
+
+    @property
+    def cake_recurrent_regularizer(self):
+        return self.cell.cake_recurrent_regularizer
+
+    @property
+    def sub_bias_regularizer(self):
+        return self.cell.sub_bias_regularizer
+
+    @property
+    def cake_bias_regularizer(self):
+        return self.cell.cake_bias_regularizer
+
+    @property
+    def sub_kernel_constraint(self):
+        return self.cell.sub_kernel_constraint
+
+    @property
+    def cake_kernel_constraint(self):
+        return self.cell.cake_kernel_constraint
+
+    @property
+    def sub_recurrent_constraint(self):
+        return self.cell.sub_recurrent_constraint
+
+    @property
+    def cake_recurrent_constraint(self):
+        return self.cell.cake_recurrent_constraint
+
+    @property
+    def sub_bias_constraint(self):
+        return self.cell.sub_bias_constraint
+
+    @property
+    def cake_bias_constraint(self):
+        return self.cell.cake_bias_constraint
+
+    @property
+    def sub_dropout(self):
+        return self.cell.sub_dropout
+
+    @property
+    def cake_dropout(self):
+        return self.cell.cake_dropout
+
+    @property
+    def sub_recurrent_dropout(self):
+        return self.cell.sub_recurrent_dropout
+
+    @property
+    def cake_recurrent_dropout(self):
+        return self.cell.cake_recurrent_dropout
+
+    @property
+    def implementation(self):
+        return self.cell.implementation
+
+    def get_config(self):
+        config = {
+            'sub_units':
+                self.sub_units,
+                'sub_lstms':
+                self.sub_lstms,
+            'sub_activation':
+                activations.serialize(self.sub_activation),
+            'cake_activation':
+                activations.serialize(self.cake_activation),
+            'sub_use_bias':
+                self.sub_use_bias,
+            'cake_use_bias':
+                self.cake_use_bias,
+            'sub_kernel_initializer':
+                initializers.serialize(self.sub_kernel_initializer),
+            'cake_kernel_initializer':
+                initializers.serialize(self.cake_kernel_initializer),
+            'sub_recurrent_initializer':
+                initializers.serialize(self.sub_recurrent_initializer),
+            'cake_recurrent_initializer':
+                initializers.serialize(self.cake_recurrent_initializer),
+            'sub_bias_initializer':
+                initializers.serialize(self.sub_bias_initializer),
+            'cake_bias_initializer':
+                initializers.serialize(self.cake_bias_initializer),
+            'sub_unit_forget_bias':
+                self.sub_unit_forget_bias,
+            'cake_unit_forget_bias':
+                self.cake_unit_forget_bias,
+            'sub_kernel_regularizer':
+                regularizers.serialize(self.sub_kernel_regularizer),
+            'cake_kernel_regularizer':
+                regularizers.serialize(self.cake_kernel_regularizer),
+            'sub_recurrent_regularizer':
+                regularizers.serialize(self.sub_recurrent_regularizer),
+            'cake_recurrent_regularizer':
+                regularizers.serialize(self.cake_recurrent_regularizer),
+            'sub_bias_regularizer':
+                regularizers.serialize(self.sub_bias_regularizer),
+            'cake_bias_regularizer':
+                regularizers.serialize(self.cake_bias_regularizer),
+            'sub_activity_regularizer':
+                regularizers.serialize(self.sub_activity_regularizer),
+            'cake_activity_regularizer':
+                regularizers.serialize(self.cake_activity_regularizer),
+            'sub_kernel_constraint':
+                constraints.serialize(self.sub_kernel_constraint),
+            'cake_kernel_constraint':
+                constraints.serialize(self.cake_kernel_constraint),
+            'sub_recurrent_constraint':
+                constraints.serialize(self.sub_recurrent_constraint),
+            'cake_recurrent_constraint':
+                constraints.serialize(self.cake_recurrent_constraint),
+            'sub_bias_constraint':
+                constraints.serialize(self.sub_bias_constraint),
+            'cake_bias_constraint':
+                constraints.serialize(self.cake_bias_constraint),
+            'sub_dropout':
+                self.sub_dropout,
+            'cake_dropout':
+                self.cake_dropout,
+            'sub_recurrent_dropout':
+                self.sub_recurrent_dropout,
+            'cake_recurrent_dropout':
+                self.cake_recurrent_dropout,
+            'implementation':
+                self.implementation
+        }
+        base_config = super(JujubeCake, self).get_config()
+        del base_config['cell']
+        return dict(list(base_config.items())) + list(config.items())
+
+    @classmethod
+    def from_config(cls, config):
+        if 'implementation' in config and config['implementation'] == 0:
+            config['implementation'] = 1
+        return cls(**config)
+
+
+class MaskReshape(Reshape):
+
+    """This class is for reshape layer that supports masking."""
+
+    def __init__(self, target_shape, factor, **kwargs):
+        super(MaskReshape, self).__init__(target_shape, **kwargs)
+        self.target_shape = tuple(target_shape)
+        self.factor = factor
+
+    def compute_mask(self, inputs, mask=None):
+        if mask is None:
+            return None
+        else:
+            mask_shape = K.shape(mask)
+            print('mask_shape', mask_shape)
+            reshaped_mask = array_ops.reshape(
+                mask, (K.shape(mask)[0], K.cast(K.shape(mask)[1]/self.factor, 'int32'), self.factor))
+            reshaped_mask = K.cast(reshaped_mask, 'float32')
+            reshaped_mean_mask = K.mean(reshaped_mask, -1, keepdims=False)
+            reshaped_mean_mask = tf.math.ceil(reshaped_mean_mask)
+            reshaped_mean_mask = K.cast(reshaped_mean_mask, 'bool')
+            return reshaped_mean_mask
