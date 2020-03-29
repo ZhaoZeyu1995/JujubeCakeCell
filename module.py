@@ -1,8 +1,9 @@
 import tensorflow as tf
 import numpy as np
 import os
-from tensorflow.keras.layers import Layer, RNN, Reshape
-import tensorflow.keras.backend as K
+from tensorflow.python.keras.layers import Layer, RNN, Reshape
+from tensorflow.python.keras.layers.recurrent import DropoutRNNCellMixin
+import tensorflow.python.keras.backend as K
 from tensorflow.python.ops import array_ops
 from tensorflow.python.keras import activations
 from tensorflow.python.keras import initializers
@@ -12,7 +13,7 @@ from tensorflow.python.keras.layers.recurrent import _generate_dropout_mask, _ge
 from tensorflow.python.keras.engine.input_spec import InputSpec
 
 
-class JujubeCakeCell(Layer):
+class JujubeCakeCell(DropoutRNNCellMixin, Layer):
     def __init__(self,
                  sub_units,
                  sub_lstms,
@@ -438,7 +439,7 @@ class JujubeCakeCell(Layer):
             'sub_activation':
             activations.serialize(self.sub_activation),
             'sub_recurrent_activation':
-            activations.serialize(self.sub_recurrent_constraint),
+            activations.serialize(self.sub_recurrent_activation),
             'cake_use_bias':
             self.cake_use_bias,
             'sub_use_bias':
@@ -622,7 +623,7 @@ class JujubeCake(RNN):
 
     @property
     def sub_activation(self):
-        return self.cell.sub_acitvation
+        return self.cell.sub_activation
 
     @property
     def cake_activation(self):
@@ -786,10 +787,8 @@ class JujubeCake(RNN):
                 regularizers.serialize(self.sub_bias_regularizer),
             'cake_bias_regularizer':
                 regularizers.serialize(self.cake_bias_regularizer),
-            'sub_activity_regularizer':
-                regularizers.serialize(self.sub_activity_regularizer),
-            'cake_activity_regularizer':
-                regularizers.serialize(self.cake_activity_regularizer),
+            'activity_regularizer':
+                regularizers.serialize(self.activity_regularizer),
             'sub_kernel_constraint':
                 constraints.serialize(self.sub_kernel_constraint),
             'cake_kernel_constraint':
@@ -815,7 +814,7 @@ class JujubeCake(RNN):
         }
         base_config = super(JujubeCake, self).get_config()
         del base_config['cell']
-        return dict(list(base_config.items())) + list(config.items())
+        return dict(list(base_config.items()) + list(config.items()))
 
     @classmethod
     def from_config(cls, config):
